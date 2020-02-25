@@ -41,6 +41,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.LinkedBlockingQueue;
+import io.prometheus.client.Histogram;
+import io.prometheus.client.exporter.HTTPServer;
 
 /**
  * Example client that updates a BFT replicated service (a counter).
@@ -72,6 +74,8 @@ public class ThroughputLatencyClient {
     public static String privKey = "MD4CAQAwEAYHKoZIzj0CAQYFK4EEAAoEJzAlAgEBBCBnhIob4JXH+WpaNiL72BlbtUMAIBQoM852d+tKFBb7fg==";
     public static String pubKey = "MFYwEAYHKoZIzj0CAQYFK4EEAAoDQgAEavNEKGRcmB7u49alxowlwCi1s24ANOpOQ9UiFBxgqnO/RfOl3BJm0qE2IJgCnvL7XUetwj5C/8MnMWi9ux2aeQ==";
     
+    static final Histogram requestLatency = Histogram.build().name("requests_latency_seconds").help("Request latency in seconds.").register();
+
     
     @SuppressWarnings("static-access")
     public static void main(String[] args) throws IOException {
@@ -125,6 +129,8 @@ public class ThroughputLatencyClient {
             System.out.println("Option 'ecdsa' requires SunEC provider to be available.");
             System.exit(0);
         }
+
+        HTTPServer server = new HTTPServer(9091);
 
         Client[] clients = new Client[numThreads];
         
@@ -239,7 +245,7 @@ public class ThroughputLatencyClient {
 
             int req = 0;
             
-            for (int i = 0; i < numberOfOps / 2; i++, req++) {
+            for (int i = 0; i < numberOfOps / 4; i++, req++) {
                 if (verbose) System.out.print("Sending req " + req + "...");
 
                 long last_send_instant = System.nanoTime();
@@ -253,6 +259,7 @@ public class ThroughputLatencyClient {
                 
                 try {
                     if (reply != null) latencies.put(id + "\t" + System.currentTimeMillis() + "\t" + latency + "\n");
+                    requestLatency.observe(latency/1000000000.0);
                 } catch (InterruptedException ex) {
                     ex.printStackTrace();
                 }
@@ -278,11 +285,11 @@ public class ThroughputLatencyClient {
                     }
             }
 
-            Storage st = new Storage(numberOfOps / 2);
+            Storage st = new Storage(3*numberOfOps / 4);
 
             System.out.println("Executing experiment for " + numberOfOps / 2 + " ops");
 
-            for (int i = 0; i < numberOfOps / 2; i++, req++) {
+            for (int i = 0; i < 3*numberOfOps / 4; i++, req++) {
                 long last_send_instant = System.nanoTime();
                 if (verbose) System.out.print(this.id + " // Sending req " + req + "...");
 
@@ -293,6 +300,7 @@ public class ThroughputLatencyClient {
                 long latency = System.nanoTime() - last_send_instant;
                 
                 try {
+                    requestLatency.observe(latency/1000000.0);
                     latencies.put(id + "\t" + System.currentTimeMillis() + "\t" + latency + "\n");
                 } catch (InterruptedException ex) {
                     ex.printStackTrace();
